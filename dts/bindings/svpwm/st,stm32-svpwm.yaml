@@ -32,3 +32,8 @@ properties:
     required: true
     description: |
       Current sampling device.
+
+  drv8316:
+    type: phandle
+    required: true
+    description: DRV8316C gate-driver device controlling the power stage.

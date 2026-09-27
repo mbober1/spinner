@@ -6,7 +6,7 @@
 #define DT_DRV_COMPAT st_stm32_svpwm
 
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
-#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/bldc.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/logging/log.h>
 
@@ -30,8 +30,7 @@ struct svpwm_stm32_config {
 	uint32_t t_dead;
 	uint32_t t_rise;
 	const struct device *currsmp;
-	const struct gpio_dt_spec *enable;
-	size_t enable_len;
+	const struct device *drv8316;
 	const struct pinctrl_dev_config *pcfg;
 };
 
@@ -52,11 +51,6 @@ static void svpwm_stm32_start(const struct device *dev)
 	svm_init(&data->svm);
 	data->svm.sector = 5U;
 	currsmp_set_sector(config->currsmp, data->svm.sector);
-
-	/* activate enable pins if available */
-	for (size_t i = 0U; i < config->enable_len; i++) {
-		gpio_pin_set(config->enable[i].port, config->enable[i].pin, 1);
-	}
 
 	/* configure timer OC for a, b, c */
 	LL_TIM_OC_SetCompareCH1(config->timer, data->period / 2U);
@@ -79,11 +73,23 @@ static void svpwm_stm32_start(const struct device *dev)
 	LL_TIM_EnableAllOutputs(config->timer);
 
 	LL_TIM_EnableCounter(config->timer);
+
+	int ret = bldc_drv_enable(config->drv8316);
+	if (ret < 0) {
+		LOG_ERR("Could not enable DRV8316C (%d)", ret);
+		LL_TIM_DisableCounter(config->timer);
+		LL_TIM_DisableAllOutputs(config->timer);
+	}
 }
 
 static void svpwm_stm32_stop(const struct device *dev)
 {
 	const struct svpwm_stm32_config *config = dev->config;
+	int ret = bldc_drv_disable(config->drv8316);
+
+	if (ret < 0) {
+		LOG_ERR("Could not disable DRV8316C (%d)", ret);
+	}
 
 	/* stop timer */
 	LL_TIM_DisableCounter(config->timer);
@@ -101,10 +107,6 @@ static void svpwm_stm32_stop(const struct device *dev)
 
 	LL_TIM_CC_DisableChannel(config->timer, LL_TIM_CHANNEL_CH4);
 
-	/* deactivate enable pins if available */
-	for (size_t i = 0U; i < config->enable_len; i++) {
-		gpio_pin_set(config->enable[i].port, config->enable[i].pin, 0);
-	}
 }
 
 static void svpwm_stm32_set_phase_voltages(const struct device *dev,
@@ -155,6 +157,10 @@ static int svpwm_stm32_init(const struct device *dev)
 
 	if (!device_is_ready(config->currsmp)) {
 		LOG_ERR("Current sampling device not ready");
+		return -ENODEV;
+	}
+	if (!device_is_ready(config->drv8316)) {
+		LOG_ERR("DRV8316C device not ready");
 		return -ENODEV;
 	}
 
@@ -257,29 +263,10 @@ static int svpwm_stm32_init(const struct device *dev)
 		return -EIO;
 	}
 
-	/* initialize enable GPIOs */
-	for (size_t i = 0U; i < config->enable_len; i++) {
-		const struct gpio_dt_spec *enable_gpio = &config->enable[i];
-
-		if (!device_is_ready(enable_gpio->port)) {
-			LOG_ERR("Enable GPIO not ready");
-			return -ENODEV;
-		}
-
-		ret = gpio_pin_configure_dt(enable_gpio, GPIO_OUTPUT_INACTIVE);
-		if (ret < 0) {
-			LOG_ERR("Could not configure enable GPIO");
-			return ret;
-		}
-	}
-
 	return 0;
 }
 
 PINCTRL_DT_INST_DEFINE(0);
-
-static const struct gpio_dt_spec enable_pins[] = {DT_FOREACH_PROP_ELEM_SEP(
-	DT_INST_CHILD(0, driver), enable_gpios, GPIO_DT_SPEC_GET_BY_IDX, (, ))};
 
 static const struct svpwm_stm32_config svpwm_stm32_config = {
 	.timer = (TIM_TypeDef *)DT_REG_ADDR(DT_INST_PARENT(0)),
@@ -289,8 +276,7 @@ static const struct svpwm_stm32_config svpwm_stm32_config = {
 	.t_dead = DT_PROP_OR(DT_INST_CHILD(0, driver), t_dead_ns, 0),
 	.t_rise = DT_PROP_OR(DT_INST_CHILD(0, driver), t_rise_ns, 0),
 	.currsmp = DEVICE_DT_GET(DT_INST_PHANDLE(0, currsmp)),
-	.enable = enable_pins,
-	.enable_len = ARRAY_SIZE(enable_pins),
+	.drv8316 = DEVICE_DT_GET(DT_INST_PHANDLE(0, drv8316)),
 	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
 };
 
