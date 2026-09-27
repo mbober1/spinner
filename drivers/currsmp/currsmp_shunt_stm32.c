@@ -28,6 +28,7 @@ struct currsmp_shunt_stm32_config {
 	uint32_t adc_irq;
 	uint8_t adc_resolution;
 	uint16_t adc_tsample;
+	uint16_t adc_oversampling;
 	uint32_t adc_ch_a;
 	uint32_t adc_ch_b;
 	uint32_t adc_ch_c;
@@ -89,6 +90,65 @@ static uint32_t adc_calc_jsqr(uint32_t trigger, uint32_t rank1_ch,
 	       LL_ADC_INJ_TRIG_EXT_RISING | trigger | 1U;
 
 	return jsqr;
+}
+
+static int adc_configure_oversampling(const struct device *dev)
+{
+	const struct currsmp_shunt_stm32_config *config = dev->config;
+
+	if (config->adc_oversampling == 0U) {
+		return 0;
+	}
+
+#if defined(CONFIG_SOC_SERIES_STM32G4X)
+	uint32_t ratio;
+	uint32_t shift;
+
+	switch (config->adc_oversampling) {
+	case 2U:
+		ratio = LL_ADC_OVS_RATIO_2;
+		shift = LL_ADC_OVS_SHIFT_RIGHT_1;
+		break;
+	case 4U:
+		ratio = LL_ADC_OVS_RATIO_4;
+		shift = LL_ADC_OVS_SHIFT_RIGHT_2;
+		break;
+	case 8U:
+		ratio = LL_ADC_OVS_RATIO_8;
+		shift = LL_ADC_OVS_SHIFT_RIGHT_3;
+		break;
+	case 16U:
+		ratio = LL_ADC_OVS_RATIO_16;
+		shift = LL_ADC_OVS_SHIFT_RIGHT_4;
+		break;
+	case 32U:
+		ratio = LL_ADC_OVS_RATIO_32;
+		shift = LL_ADC_OVS_SHIFT_RIGHT_5;
+		break;
+	case 64U:
+		ratio = LL_ADC_OVS_RATIO_64;
+		shift = LL_ADC_OVS_SHIFT_RIGHT_6;
+		break;
+	case 128U:
+		ratio = LL_ADC_OVS_RATIO_128;
+		shift = LL_ADC_OVS_SHIFT_RIGHT_7;
+		break;
+	case 256U:
+		ratio = LL_ADC_OVS_RATIO_256;
+		shift = LL_ADC_OVS_SHIFT_RIGHT_8;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	LL_ADC_SetOverSamplingScope(config->adc, LL_ADC_OVS_GRP_INJECTED);
+	LL_ADC_ConfigOverSamplingRatioShift(config->adc, ratio, shift);
+
+	return 0;
+#else
+	LOG_ERR("ADC injected oversampling is only supported on STM32G4");
+	return -ENOTSUP;
+#endif
 }
 
 /**
@@ -161,6 +221,10 @@ static int adc_configure(const struct device *dev)
 	if (LL_ADC_INJ_Init(config->adc, &adc_jinit) != SUCCESS) {
 		LOG_ERR("Could not initialize ADC injected group");
 		return -EIO;
+	}
+	ret = adc_configure_oversampling(dev);
+	if (ret < 0) {
+		return ret;
 	}
 
 	/* configure sampling time */
@@ -342,8 +406,10 @@ static uint32_t currsmp_shunt_stm32_get_smp_time(const struct device *dev)
 		return 0U;
 	}
 
-	return (uint32_t)((1.0e9f / (float)clk) *
-			  (t_sar + 2.0f * (float)config->adc_tsample));
+	return (uint32_t)((1.0e9f / (float)clk) * 2.0f *
+			  (float)(config->adc_oversampling != 0U ?
+				  config->adc_oversampling : 1U) *
+			  (t_sar + (float)config->adc_tsample));
 }
 
 static void currsmp_shunt_stm32_start(const struct device *dev)
@@ -443,6 +509,7 @@ static const struct currsmp_shunt_stm32_config currsmp_shunt_stm32_config = {
 	.adc_irq = DT_IRQ_BY_IDX(DT_INST_PARENT(0), 0, irq),
 	.adc_resolution = DT_INST_PROP(0, adc_resolution),
 	.adc_tsample = DT_INST_PROP(0, adc_tsample),
+	.adc_oversampling = DT_INST_PROP_OR(0, adc_oversampling, 0U),
 	.adc_ch_a = __LL_ADC_DECIMAL_NB_TO_CHANNEL(
 		DT_INST_PROP_BY_IDX(0, adc_channels, 0)),
 	.adc_ch_b = __LL_ADC_DECIMAL_NB_TO_CHANNEL(

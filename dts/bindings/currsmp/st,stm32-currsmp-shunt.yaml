@@ -46,6 +46,13 @@ properties:
       up, e.g. 19.5 needs to be provided as 20. Available sample times can
       differ depending on the SoC family.
 
+  adc-oversampling:
+    type: int
+    enum: [2, 4, 8, 16, 32, 64, 128, 256]
+    description: |
+      STM32G4 injected conversion oversampling ratio. When enabled, results
+      are shifted to retain the average value at the configured ADC resolution.
+
   adc-channels:
     type: array
     required: true
