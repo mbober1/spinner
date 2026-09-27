@@ -15,3 +15,13 @@ source "subsys/logging/Kconfig.template.log_config"
 rsource "Kconfig.stm32"
 
 endif # SPINNER_FEEDBACK
+
+config SPINNER_FEEDBACK_MT6701
+	bool "MT6701 sensor feedback"
+	depends on SENSOR && MT6701
+	depends on DT_HAS_SPINNER_MT6701_FEEDBACK_ENABLED
+	select SPINNER_FEEDBACK
+	help
+	  Use an MT6701 sensor as the rotor feedback source. The sensor is sampled
+	  periodically outside the current-loop interrupt, which reads a cached
+	  electrical angle.

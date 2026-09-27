@@ -1,0 +1,29 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+description: MT6701 sensor adapter for the Spinner feedback API.
+
+compatible: "spinner,mt6701-feedback"
+
+include: base.yaml
+
+properties:
+  sensor:
+    type: phandle
+    required: true
+    description: MT6701 sensor device providing rotation and RPM channels.
+
+  pole-pairs:
+    type: int
+    required: true
+    description: Motor pole-pair count used to convert mechanical to electrical angle.
+
+  phase-offset-degrees:
+    type: int
+    default: 0
+    description: Electrical angle offset, in degrees.
+
+  sampling-period-ms:
+    type: int
+    default: 1
+    description: Period between sensor fetches performed outside the current-loop ISR.
