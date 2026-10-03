@@ -31,6 +31,7 @@ struct mt6701_feedback_data {
 	struct k_work_delayable sample_work;
 	atomic_t eangle_millidegrees;
 	atomic_t speed_millirpm;
+	atomic_t position_millidegrees;
 };
 
 static int mt6701_feedback_sample(const struct device *dev)
@@ -51,6 +52,9 @@ static int mt6701_feedback_sample(const struct device *dev)
 	if (ret < 0) {
 		return ret;
 	}
+
+	atomic_set(&data->position_millidegrees,
+		(atomic_val_t)(sensor_value_to_float(&rotation) * MT6701_FEEDBACK_MILLI_SCALE));
 
 	electrical_angle = fmodf(sensor_value_to_float(&rotation) * config->pole_pairs +
 				 config->phase_offset_degrees,
@@ -104,9 +108,18 @@ static float mt6701_feedback_get_speed(const struct device *dev)
 	       MT6701_FEEDBACK_MILLI_SCALE;
 }
 
+static float mt6701_feedback_get_position(const struct device *dev)
+{
+	const struct mt6701_feedback_data *data = dev->data;
+
+	return (float)atomic_get(&data->position_millidegrees) /
+	       MT6701_FEEDBACK_MILLI_SCALE;
+}
+
 static const struct feedback_driver_api mt6701_feedback_api = {
 	.get_eangle = mt6701_feedback_get_eangle,
 	.get_speed = mt6701_feedback_get_speed,
+	.get_position = mt6701_feedback_get_position,
 };
 
 static int mt6701_feedback_init(const struct device *dev)

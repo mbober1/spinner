@@ -24,12 +24,13 @@
 struct feedback_driver_api {
 	float (*get_eangle)(const struct device *dev);
 	float (*get_speed)(const struct device *dev);
+	float (*get_position)(const struct device *dev);
 };
 
 /** @endcond */
 
 /**
- * @brief Get electrical angle.
+ * @brief Get electrical angle in degrees.
  *
  * @param dev Feedback instance.
  * @return Electrical angle.
@@ -52,6 +53,19 @@ static inline float feedback_get_speed(const struct device *dev)
 	const struct feedback_driver_api *api = dev->api;
 
 	return api->get_speed(dev);
+}
+
+/**
+ * @brief Get the multi-turn mechanical position in degrees.
+ *
+ * @param dev Feedback instance.
+ * @param position Pointer where the position will be stored.
+ */
+static inline float feedback_get_position(const struct device *dev)
+{
+	const struct feedback_driver_api *api = dev->api;
+
+	return api->get_position(dev);
 }
 
 /** @} */
