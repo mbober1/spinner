@@ -5,6 +5,7 @@
 
 #include <zephyr/device.h>
 #include <zephyr/init.h>
+#include <math.h>
 
 #include <arm_math.h>
 
@@ -23,6 +24,17 @@ struct cloop {
 };
 
 static struct cloop cloop;
+
+#define POLE_PAIRS ((float)DT_PROP(DT_NODELABEL(motor), pole_pairs))
+#define PHASE_OFFSET_DEGREES ((float)DT_PROP(DT_NODELABEL(motor), phase_offset_degrees))
+
+static float mechanical_to_electrical_angle(float mechanical_angle)
+{
+	float electrical_angle = fmodf(mechanical_angle * POLE_PAIRS + PHASE_OFFSET_DEGREES,
+					360.0f);
+
+	return electrical_angle < 0.0f ? electrical_angle + 360.0f : electrical_angle;
+}
 
 /**
  * @brief Current regulation callback.
@@ -43,7 +55,7 @@ static void regulate(void *ctx)
 	ARG_UNUSED(ctx);
 
 	currsmp_get_currents(cloop.currsmp, &curr);
-	eangle = feedback_get_eangle(cloop.feedback);
+	eangle = mechanical_to_electrical_angle(feedback_get_eangle(cloop.feedback));
 	arm_sin_cos_f32(eangle, &sin_eangle, &cos_eangle);
 
 	/* i_a, i_b -> i_alpha, i_beta */

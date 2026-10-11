@@ -8,6 +8,21 @@ menuconfig SPINNER_FEEDBACK
 
 if SPINNER_FEEDBACK
 
+config SPINNER_FEEDBACK_RTIO
+	bool "Asynchronous RTIO feedback"
+	default y if SPINNER_FEEDBACK_MT6701
+	depends on SENSOR_ASYNC_API
+	select RTIO
+	select FPU
+
+config SPINNER_FEEDBACK_RTIO_SAMPLE_PERIOD_MS
+	int "RTIO feedback filter sample period in milliseconds"
+	default 10
+	range 1 60000
+	depends on SPINNER_FEEDBACK_RTIO
+	help
+	  Expected sample period used to initialize the optional feedback speed filter.
+
 module = SPINNER_FEEDBACK
 module-str = SPINNER_FEEDBACK
 source "subsys/logging/Kconfig.template.log_config"
@@ -15,13 +30,3 @@ source "subsys/logging/Kconfig.template.log_config"
 rsource "Kconfig.stm32"
 
 endif # SPINNER_FEEDBACK
-
-config SPINNER_FEEDBACK_MT6701
-	bool "MT6701 sensor feedback"
-	depends on SENSOR && MT6701
-	depends on DT_HAS_SPINNER_MT6701_FEEDBACK_ENABLED
-	select SPINNER_FEEDBACK
-	help
-	  Use an MT6701 sensor as the rotor feedback source. The sensor is sampled
-	  periodically outside the current-loop interrupt, which reads a cached
-	  electrical angle.

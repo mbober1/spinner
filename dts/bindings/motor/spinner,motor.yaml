@@ -1,0 +1,17 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+description: Motor configuration used by Spinner control loops.
+
+compatible: "spinner,motor"
+
+properties:
+  pole-pairs:
+    type: int
+    required: true
+    description: Motor pole-pair count.
+
+  phase-offset-degrees:
+    type: int
+    default: 0
+    description: Electrical phase offset in degrees.

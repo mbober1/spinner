@@ -4,6 +4,7 @@
 menu "Libraries"
 
 rsource "control/Kconfig"
+rsource "filter/Kconfig"
 rsource "svm/Kconfig"
 rsource "utils/Kconfig"
 

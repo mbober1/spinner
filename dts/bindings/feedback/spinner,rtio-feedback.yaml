@@ -1,0 +1,14 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+description: Generic asynchronous RTIO encoder adapter for Spinner feedback.
+
+compatible: "spinner,rtio-feedback"
+
+include: [base.yaml, filter.yaml]
+
+properties:
+  sensor:
+    type: phandle
+    required: true
+    description: Async sensor device providing SENSOR_CHAN_ROTATION samples.
