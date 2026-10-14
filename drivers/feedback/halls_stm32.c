@@ -153,7 +153,7 @@ static float halls_stm32_get_speed(const struct device *dev)
 }
 
 static const struct feedback_driver_api halls_stm32_driver_api = {
-	.get_eangle = halls_stm32_get_eangle,
+	.get_angle = halls_stm32_get_eangle,
 	.get_speed = halls_stm32_get_speed};
 
 /*******************************************************************************

@@ -55,7 +55,7 @@ static void regulate(void *ctx)
 	ARG_UNUSED(ctx);
 
 	currsmp_get_currents(cloop.currsmp, &curr);
-	eangle = mechanical_to_electrical_angle(feedback_get_eangle(cloop.feedback));
+	eangle = mechanical_to_electrical_angle(feedback_get_angle(cloop.feedback));
 	arm_sin_cos_f32(eangle, &sin_eangle, &cos_eangle);
 
 	/* i_a, i_b -> i_alpha, i_beta */

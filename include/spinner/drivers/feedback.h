@@ -22,7 +22,7 @@
 /** @cond INTERNAL_HIDDEN */
 
 struct feedback_driver_api {
-	float (*get_eangle)(const struct device *dev);
+	float (*get_angle)(const struct device *dev);
 	float (*get_speed)(const struct device *dev);
 	float (*get_position)(const struct device *dev);
 };
@@ -35,11 +35,11 @@ struct feedback_driver_api {
  * @param dev Feedback instance.
  * @return Electrical angle.
  */
-static inline float feedback_get_eangle(const struct device *dev)
+static inline float feedback_get_angle(const struct device *dev)
 {
 	const struct feedback_driver_api *api = dev->api;
 
-	return api->get_eangle(dev);
+	return api->get_angle(dev);
 }
 
 /**

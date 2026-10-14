@@ -122,7 +122,7 @@ static void rtio_feedback_thread(void *arg1, void *arg2, void *arg3)
 	}
 }
 
-static float rtio_feedback_get_eangle(const struct device *dev)
+static float rtio_feedback_get_angle(const struct device *dev)
 {
 	struct rtio_feedback_data *data = dev->data;
 	k_spinlock_key_t key = k_spin_lock(&data->snapshot_lock);
@@ -153,7 +153,7 @@ static float rtio_feedback_get_position(const struct device *dev)
 }
 
 const struct feedback_driver_api rtio_feedback_api = {
-	.get_eangle = rtio_feedback_get_eangle,
+	.get_angle = rtio_feedback_get_angle,
 	.get_speed = rtio_feedback_get_speed,
 	.get_position = rtio_feedback_get_position,
 };
