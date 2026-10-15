@@ -8,6 +8,7 @@
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
 #include <zephyr/drivers/bldc.h>
 #include <zephyr/drivers/pinctrl.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 #include <stm32_ll_tim.h>
@@ -18,6 +19,8 @@
 #include <spinner/utils/stm32_tim.h>
 
 LOG_MODULE_REGISTER(svpwm_stm32, CONFIG_SPINNER_SVPWM_LOG_LEVEL);
+
+#define SVPWM_STM32_BREAK_WAIT_MS 2000
 
 /*******************************************************************************
  * Private
@@ -73,6 +76,15 @@ static void svpwm_stm32_start(const struct device *dev)
 	LL_TIM_EnableAllOutputs(config->timer);
 
 	LL_TIM_EnableCounter(config->timer);
+
+	for (int i = 0; i < SVPWM_STM32_BREAK_WAIT_MS &&
+			!LL_TIM_IsEnabledAllOutputs(config->timer); i++) {
+		k_sleep(K_MSEC(1));
+		LL_TIM_EnableAllOutputs(config->timer);
+	}
+	if (!LL_TIM_IsEnabledAllOutputs(config->timer)) {
+		LOG_ERR("Outputs still disabled, break input active");
+	}
 
 	int ret = bldc_drv_enable(config->drv8316);
 	if (ret < 0) {
