@@ -175,7 +175,7 @@ int rtio_feedback_init(const struct device *dev)
 	}
 
 #if defined(CONFIG_SPINNER_FILTER_LOW_PASS)
-	ret = low_pass_filter_init(&data->speed_filter, CONFIG_SPINNER_FEEDBACK_RTIO_SAMPLE_PERIOD_MS,
+	ret = low_pass_filter_init(&data->speed_filter, 1000U / CONFIG_SPINNER_FEEDBACK_RTIO_SAMPLE_PERIOD_MS,
 					   &config->speed_filter_config);
 	if (ret < 0) {
 		return ret;

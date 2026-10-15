@@ -32,7 +32,7 @@ struct low_pass_filter {
 };
 
 int low_pass_filter_init(struct low_pass_filter *filter,
-			 uint32_t sampling_period_ms,
+			 uint32_t sample_rate_hz,
 			 const struct low_pass_filter_config *config);
 float low_pass_filter_process(struct low_pass_filter *filter, float sample);
 

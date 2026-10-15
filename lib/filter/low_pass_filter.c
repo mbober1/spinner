@@ -15,20 +15,18 @@
 
 #if defined(CONFIG_SPINNER_FILTER_LOW_PASS_BIQUAD)
 int low_pass_filter_init(struct low_pass_filter *filter,
-			 uint32_t sampling_period_ms,
+			 uint32_t sample_rate_hz,
 			 const struct low_pass_filter_config *config)
 {
-	const float sample_rate = sampling_period_ms > 0U ?
-		1000.0f / (float)sampling_period_ms : 0.0f;
+	const float sample_rate = (float)sample_rate_hz;
 	const float cutoff = config != NULL ? config->cutoff_hz : 0.0f;
 	float omega;
 	float alpha;
 	float cos_omega;
 	float a0;
 
-	if (filter == NULL || config == NULL || sampling_period_ms == 0U ||
-	    cutoff <= 0.0f || sample_rate <= 0.0f ||
-	    cutoff * 2.0f >= sample_rate) {
+	if (filter == NULL || config == NULL || sample_rate_hz == 0U ||
+	    cutoff <= 0.0f || cutoff * 2.0f >= sample_rate) {
 		return -EINVAL;
 	}
 
@@ -58,18 +56,16 @@ float low_pass_filter_process(struct low_pass_filter *filter, float sample)
 }
 #elif defined(CONFIG_SPINNER_FILTER_LOW_PASS_FIR)
 int low_pass_filter_init(struct low_pass_filter *filter,
-			 uint32_t sampling_period_ms,
+			 uint32_t sample_rate_hz,
 			 const struct low_pass_filter_config *config)
 {
-	const float sample_rate = sampling_period_ms > 0U ?
-		1000.0f / (float)sampling_period_ms : 0.0f;
+	const float sample_rate = (float)sample_rate_hz;
 	const float cutoff = config != NULL ? config->cutoff_hz : 0.0f;
 	const size_t taps = config != NULL ? config->taps : 0U;
 	float sum = 0.0f;
 
-	if (filter == NULL || config == NULL || sampling_period_ms == 0U ||
-	    cutoff <= 0.0f || sample_rate <= 0.0f ||
-	    cutoff * 2.0f >= sample_rate || taps < 3U ||
+	if (filter == NULL || config == NULL || sample_rate_hz == 0U ||
+	    cutoff <= 0.0f || cutoff * 2.0f >= sample_rate || taps < 3U ||
 	    taps > CONFIG_SPINNER_FILTER_LOW_PASS_MAX_TAPS || (taps & 1U) == 0U) {
 		return -EINVAL;
 	}
@@ -106,11 +102,11 @@ float low_pass_filter_process(struct low_pass_filter *filter, float sample)
 }
 #else
 int low_pass_filter_init(struct low_pass_filter *filter,
-			 uint32_t sampling_period_ms,
+			 uint32_t sample_rate_hz,
 			 const struct low_pass_filter_config *config)
 {
 	(void)filter;
-	(void)sampling_period_ms;
+	(void)sample_rate_hz;
 	(void)config;
 	return -ENOTSUP;
 }

@@ -10,10 +10,14 @@
 #include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
 
 #include <stm32_ll_adc.h>
 
 #include <spinner/drivers/currsmp.h>
+#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
+#include <spinner/filter/low_pass_filter.h>
+#endif
 #include <spinner/utils/stm32_adc.h>
 
 LOG_MODULE_REGISTER(currsmp_shunt_stm32, CONFIG_SPINNER_CURRSMP_LOG_LEVEL);
@@ -33,7 +37,11 @@ struct currsmp_shunt_stm32_config {
 	uint32_t adc_ch_b;
 	uint32_t adc_ch_c;
 	uint32_t adc_trigger;
+	float csa_gain_v_per_a;
 	const struct pinctrl_dev_config *pcfg;
+#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
+	struct low_pass_filter_config filter_config;
+#endif
 };
 
 struct currsmp_shunt_stm32_data {
@@ -44,7 +52,14 @@ struct currsmp_shunt_stm32_data {
 	uint16_t i_c_offset;
 	uint8_t sector;
 	uint32_t jsqr[3];
+	float adc_vref_v;
+	struct currsmp_curr curr;
+#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
+	struct low_pass_filter filter[3];
+#endif
 };
+
+static void adc_update_currents(const struct device *dev);
 
 ISR_DIRECT_DECLARE(adc_irq)
 {
@@ -54,6 +69,7 @@ ISR_DIRECT_DECLARE(adc_irq)
 
 	if (LL_ADC_IsActiveFlag_JEOS(config->adc)) {
 		LL_ADC_ClearFlag_JEOS(config->adc);
+		adc_update_currents(dev);
 		data->regulation_cb(data->regulation_ctx);
 	}
 
@@ -306,6 +322,48 @@ static uint16_t adc_read(const struct device *dev, uint32_t channel)
 	return (uint16_t)LL_ADC_REG_ReadConversionData32(config->adc);
 }
 
+/**
+ * @brief Measure ADC reference voltage (VDDA) via internal VREFINT.
+ *
+ * @param dev Current sampling device
+ *
+ * @return 0 on success, negative errno otherwise.
+ */
+static int adc_measure_vdda(const struct device *dev)
+{
+	const struct currsmp_shunt_stm32_config *config = dev->config;
+	struct currsmp_shunt_stm32_data *data = dev->data;
+	uint16_t vrefint_data;
+	float vrefint_data_12b;
+
+	LL_ADC_SetCommonPathInternalCh(__LL_ADC_COMMON_INSTANCE(config->adc),
+				       LL_ADC_PATH_INTERNAL_VREFINT);
+	LL_ADC_SetChannelSamplingTime(config->adc, LL_ADC_CHANNEL_VREFINT,
+				      LL_ADC_SAMPLINGTIME_640CYCLES_5);
+	/* VREFINT buffer startup */
+	k_busy_wait(20U);
+
+	vrefint_data = adc_read(dev, LL_ADC_CHANNEL_VREFINT);
+
+	LL_ADC_SetCommonPathInternalCh(__LL_ADC_COMMON_INSTANCE(config->adc),
+				       LL_ADC_PATH_INTERNAL_NONE);
+
+	if (vrefint_data == 0U) {
+		LOG_ERR("VREFINT measurement returned zero");
+		return -EIO;
+	}
+
+	/* scale to 12 bits to match factory calibration */
+	vrefint_data_12b = (float)vrefint_data * 4096.0f /
+			   (float)(2U << (config->adc_resolution - 1U));
+	data->adc_vref_v = ((float)VREFINT_CAL_VREF / 1000.0f) *
+			   (float)(*VREFINT_CAL_ADDR) / vrefint_data_12b;
+
+	LOG_INF("ADC reference measured: %d mV", (int)(data->adc_vref_v * 1000.0f));
+
+	return 0;
+}
+
 /*******************************************************************************
  * API
  ******************************************************************************/
@@ -320,11 +378,17 @@ static void currsmp_shunt_stm32_configure(const struct device *dev,
 	data->regulation_ctx = ctx;
 }
 
-static void currsmp_shunt_stm32_get_currents(const struct device *dev,
-					     struct currsmp_curr *curr)
+static void adc_compute_currents(const struct device *dev,
+				 struct currsmp_curr *curr)
 {
 	const struct currsmp_shunt_stm32_config *config = dev->config;
 	struct currsmp_shunt_stm32_data *data = dev->data;
+
+	/* ADC counts -> volts (measured ADC reference / full scale) */
+	const float volts_per_count =	data->adc_vref_v / (float)(2U << (config->adc_resolution - 1U));
+
+	/* CSA output volts -> phase amps (gain in V/A) */
+	const float amps_per_volt = 1.0f / config->csa_gain_v_per_a;
 
 	uint16_t val_ch1;
 	uint16_t val_ch2;
@@ -371,9 +435,33 @@ static void currsmp_shunt_stm32_get_currents(const struct device *dev,
 		break;
 	}
 
-	curr->i_a = (float)i_a / (2U << (config->adc_resolution - 1U));
-	curr->i_b = (float)i_b / (2U << (config->adc_resolution - 1U));
-	curr->i_c = (float)i_c / (2U << (config->adc_resolution - 1U));
+	curr->i_a = (float)i_a * volts_per_count * amps_per_volt;
+	curr->i_b = (float)i_b * volts_per_count * amps_per_volt;
+	curr->i_c = (float)i_c * volts_per_count * amps_per_volt;
+}
+
+static void adc_update_currents(const struct device *dev)
+{
+	struct currsmp_shunt_stm32_data *data = dev->data;
+	struct currsmp_curr raw;
+
+	adc_compute_currents(dev, &raw);
+
+#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
+	data->curr.i_a = low_pass_filter_process(&data->filter[0], raw.i_a);
+	data->curr.i_b = low_pass_filter_process(&data->filter[1], raw.i_b);
+	data->curr.i_c = low_pass_filter_process(&data->filter[2], raw.i_c);
+#else
+	data->curr = raw;
+#endif
+}
+
+static void currsmp_shunt_stm32_get_currents(const struct device *dev,
+					     struct currsmp_curr *curr)
+{
+	const struct currsmp_shunt_stm32_data *data = dev->data;
+
+	*curr = data->curr;
 }
 
 static void currsmp_shunt_stm32_set_sector(const struct device *dev,
@@ -490,6 +578,12 @@ static int currsmp_shunt_stm32_init(const struct device *dev)
 		return ret;
 	}
 
+	/* measure ADC reference voltage */
+	ret = adc_measure_vdda(dev);
+	if (ret < 0) {
+		return ret;
+	}
+
 	/* pre-compute ADC injected sequences */
 	data->jsqr[0] = adc_calc_jsqr(config->adc_trigger, config->adc_ch_b,
 				      config->adc_ch_c);
@@ -497,6 +591,18 @@ static int currsmp_shunt_stm32_init(const struct device *dev)
 				      config->adc_ch_c);
 	data->jsqr[2] = adc_calc_jsqr(config->adc_trigger, config->adc_ch_b,
 				      config->adc_ch_a);
+
+#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
+	for (size_t i = 0; i < ARRAY_SIZE(data->filter); i++) {
+		ret = low_pass_filter_init(&data->filter[i],
+					   CONFIG_SPINNER_SVPWM_STM32_PWM_FREQ,
+					   &config->filter_config);
+		if (ret < 0) {
+			LOG_ERR("Could not initialize current filter (%d)", ret);
+			return ret;
+		}
+	}
+#endif
 
 	return 0;
 }
@@ -517,7 +623,14 @@ static const struct currsmp_shunt_stm32_config currsmp_shunt_stm32_config = {
 	.adc_ch_c = __LL_ADC_DECIMAL_NB_TO_CHANNEL(
 		DT_INST_PROP_BY_IDX(0, adc_channels, 2)),
 	.adc_trigger = DT_INST_PROP(0, adc_trigger),
+	.csa_gain_v_per_a = DT_INST_PROP(0, csa_gain_mv_per_a) / 1000.0f,
 	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
+#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
+	.filter_config = {
+		.cutoff_hz = DT_INST_PROP_OR(0, filter_cutoff_hz, 0),
+		.taps = DT_INST_PROP_OR(0, filter_taps, 0),
+	},
+#endif
 };
 
 static struct currsmp_shunt_stm32_data currsmp_shunt_stm32_data;
