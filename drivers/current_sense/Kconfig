@@ -1,0 +1,34 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig SPINNER_CURRENT_SENSE
+	bool "Current sense adapter"
+	depends on SPINNER_CURRSMP && SPINNER_SVPWM && FPU
+	default y if $(dt_compat_enabled,$(DT_COMPAT_SPINNER_CURRENT_SENSE))
+	select SPINNER_FILTER_LOW_PASS
+	help
+	  Enable the generic current sense adapter.
+
+if SPINNER_CURRENT_SENSE
+
+module = SPINNER_CURRENT_SENSE
+module-str = SPINNER_CURRENT_SENSE
+source "subsys/logging/Kconfig.template.log_config"
+
+config SPINNER_CURRENT_SENSE_INIT_PRIORITY
+	int "Current sense init priority"
+	default 92
+	help
+	  Current sense initialization priority. Must be after currsmp and svpwm.
+
+config SPINNER_CURRENT_SENSE_THREAD_PRIORITY
+	int "Current sense thread priority"
+	default -15
+	help
+	  Priority of the thread converting, filtering and regulating samples.
+
+config SPINNER_CURRENT_SENSE_THREAD_STACK_SIZE
+	int "Current sense thread stack size"
+	default 512
+
+endif # SPINNER_CURRENT_SENSE

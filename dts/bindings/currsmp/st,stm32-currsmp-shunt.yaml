@@ -68,19 +68,3 @@ properties:
 
       Definitions available at dts-bindings/adc/stm32fxxx.h files.
 
-  csa-gain-mv-per-a:
-    type: int
-    required: true
-    description: |
-      Current sense amplifier gain in mV/A.
-
-  filter-cutoff-hz:
-    type: int
-    description: |
-      Phase current low-pass cutoff frequency in Hz. Used when
-      CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS is enabled.
-
-  filter-taps:
-    type: int
-    description: |
-      Phase current FIR tap count (odd, FIR backend only).

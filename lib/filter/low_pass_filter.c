@@ -54,52 +54,6 @@ float low_pass_filter_process(struct low_pass_filter *filter, float sample)
 	arm_biquad_cascade_df1_f32(&filter->biquad, &sample, &output, 1);
 	return output;
 }
-#elif defined(CONFIG_SPINNER_FILTER_LOW_PASS_FIR)
-int low_pass_filter_init(struct low_pass_filter *filter,
-			 uint32_t sample_rate_hz,
-			 const struct low_pass_filter_config *config)
-{
-	const float sample_rate = (float)sample_rate_hz;
-	const float cutoff = config != NULL ? config->cutoff_hz : 0.0f;
-	const size_t taps = config != NULL ? config->taps : 0U;
-	float sum = 0.0f;
-
-	if (filter == NULL || config == NULL || sample_rate_hz == 0U ||
-	    cutoff <= 0.0f || cutoff * 2.0f >= sample_rate || taps < 3U ||
-	    taps > CONFIG_SPINNER_FILTER_LOW_PASS_MAX_TAPS || (taps & 1U) == 0U) {
-		return -EINVAL;
-	}
-
-	memset(filter, 0, sizeof(*filter));
-	for (size_t i = 0; i < taps; i++) {
-		const float centered = (float)i - (float)(taps - 1U) * 0.5f;
-		const float sinc = centered == 0.0f
-			? 2.0f * cutoff / sample_rate
-			: sinf(2.0f * LOW_PASS_FILTER_PI * cutoff * centered / sample_rate) /
-			  (LOW_PASS_FILTER_PI * centered);
-		const float window = 0.54f - 0.46f * cosf(2.0f * LOW_PASS_FILTER_PI * i /
-									(taps - 1U));
-
-		filter->coefficients[i] = sinc * window;
-		sum += filter->coefficients[i];
-	}
-
-	for (size_t i = 0; i < taps; i++) {
-		filter->coefficients[i] /= sum;
-	}
-
-	arm_fir_init_f32(&filter->fir, (uint16_t)taps, filter->coefficients,
-				 filter->state, 1);
-	return 0;
-}
-
-float low_pass_filter_process(struct low_pass_filter *filter, float sample)
-{
-	float output;
-
-	arm_fir_f32(&filter->fir, &sample, &output, 1);
-	return output;
-}
 #else
 int low_pass_filter_init(struct low_pass_filter *filter,
 			 uint32_t sample_rate_hz,

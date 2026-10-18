@@ -12,7 +12,6 @@
 
 static const struct low_pass_filter_config filter_config = {
 	.cutoff_hz = 10.0f,
-	.taps = 15U,
 };
 
 ZTEST(low_pass_filter, test_invalid_configuration)
@@ -25,16 +24,6 @@ ZTEST(low_pass_filter, test_invalid_configuration)
 
 	invalid.cutoff_hz = 50.0f;
 	zassert_equal(low_pass_filter_init(&filter, 100U, &invalid), -EINVAL, NULL);
-
-#if defined(CONFIG_SPINNER_FILTER_LOW_PASS_FIR)
-	invalid = filter_config;
-	invalid.taps = 2U;
-	zassert_equal(low_pass_filter_init(&filter, 100U, &invalid), -EINVAL, NULL);
-	invalid.taps = 16U;
-	zassert_equal(low_pass_filter_init(&filter, 100U, &invalid), -EINVAL, NULL);
-	invalid.taps = CONFIG_SPINNER_FILTER_LOW_PASS_MAX_TAPS + 1U;
-	zassert_equal(low_pass_filter_init(&filter, 100U, &invalid), -EINVAL, NULL);
-#endif
 }
 
 ZTEST(low_pass_filter, test_constant_input_converges)

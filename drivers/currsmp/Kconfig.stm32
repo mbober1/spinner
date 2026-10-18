@@ -11,10 +11,3 @@ config SPINNER_CURRSMP_SHUNT_STM32
 	select ZERO_LATENCY_IRQS
 	help
 	  Enable shunt current sampling driver for STM32 SoCs
-
-config SPINNER_CURRSMP_FILTER_LOW_PASS
-	bool "Low-pass filter for phase currents"
-	depends on SPINNER_CURRSMP_SHUNT_STM32 && SPINNER_SVPWM_STM32 && FPU
-	select SPINNER_FILTER_LOW_PASS
-	help
-	  Filter phase current readings, sampled at the SV-PWM rate.

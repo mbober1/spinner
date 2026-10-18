@@ -4,3 +4,4 @@
 add_subdirectory_ifdef(CONFIG_SPINNER_CURRSMP currsmp)
 add_subdirectory_ifdef(CONFIG_SPINNER_FEEDBACK feedback)
 add_subdirectory_ifdef(CONFIG_SPINNER_SVPWM svpwm)
+add_subdirectory_ifdef(CONFIG_SPINNER_CURRENT_SENSE current_sense)

@@ -15,9 +15,6 @@
 #include <stm32_ll_adc.h>
 
 #include <spinner/drivers/currsmp.h>
-#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
-#include <spinner/filter/low_pass_filter.h>
-#endif
 #include <spinner/utils/stm32_adc.h>
 
 LOG_MODULE_REGISTER(currsmp_shunt_stm32, CONFIG_SPINNER_CURRSMP_LOG_LEVEL);
@@ -37,11 +34,7 @@ struct currsmp_shunt_stm32_config {
 	uint32_t adc_ch_b;
 	uint32_t adc_ch_c;
 	uint32_t adc_trigger;
-	float csa_gain_v_per_a;
 	const struct pinctrl_dev_config *pcfg;
-#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
-	struct low_pass_filter_config filter_config;
-#endif
 };
 
 struct currsmp_shunt_stm32_data {
@@ -53,13 +46,8 @@ struct currsmp_shunt_stm32_data {
 	uint8_t sector;
 	uint32_t jsqr[3];
 	float adc_vref_v;
-	struct currsmp_curr curr;
-#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
-	struct low_pass_filter filter[3];
-#endif
+	struct currsmp_sample sample;
 };
-
-static void adc_update_currents(const struct device *dev);
 
 ISR_DIRECT_DECLARE(adc_irq)
 {
@@ -69,11 +57,17 @@ ISR_DIRECT_DECLARE(adc_irq)
 
 	if (LL_ADC_IsActiveFlag_JEOS(config->adc)) {
 		LL_ADC_ClearFlag_JEOS(config->adc);
-		adc_update_currents(dev);
-		data->regulation_cb(data->regulation_ctx);
+		data->sample.ch1 = (uint16_t)LL_ADC_INJ_ReadConversionData32(
+			config->adc, LL_ADC_INJ_RANK_1);
+		data->sample.ch2 = (uint16_t)LL_ADC_INJ_ReadConversionData32(
+			config->adc, LL_ADC_INJ_RANK_2);
+		data->sample.sector = data->sector;
+		if (data->regulation_cb != NULL) {
+			data->regulation_cb(data->regulation_ctx);
+		}
 	}
 
-	return 0;
+	return 1;
 }
 
 /**
@@ -113,58 +107,39 @@ static int adc_configure_oversampling(const struct device *dev)
 	const struct currsmp_shunt_stm32_config *config = dev->config;
 
 	if (config->adc_oversampling == 0U) {
+		LOG_DBG("ADC oversampling is disabled");
 		return 0;
 	}
 
-#if defined(CONFIG_SOC_SERIES_STM32G4X)
-	uint32_t ratio;
-	uint32_t shift;
+	static const struct {
+		uint16_t oversampling;
+		uint32_t ratio;
+		uint32_t shift;
+	} ovs_table[] = {
+		{ 2U, 	LL_ADC_OVS_RATIO_2, 	LL_ADC_OVS_SHIFT_RIGHT_1 },
+		{ 4U, 	LL_ADC_OVS_RATIO_4, 	LL_ADC_OVS_SHIFT_RIGHT_2 },
+		{ 8U, 	LL_ADC_OVS_RATIO_8, 	LL_ADC_OVS_SHIFT_RIGHT_3 },
+		{ 16U, 	LL_ADC_OVS_RATIO_16, 	LL_ADC_OVS_SHIFT_RIGHT_4 },
+		{ 32U, 	LL_ADC_OVS_RATIO_32, 	LL_ADC_OVS_SHIFT_RIGHT_5 },
+		{ 64U, 	LL_ADC_OVS_RATIO_64, 	LL_ADC_OVS_SHIFT_RIGHT_6 },
+		{ 128U, LL_ADC_OVS_RATIO_128, LL_ADC_OVS_SHIFT_RIGHT_7 },
+		{ 256U, LL_ADC_OVS_RATIO_256, LL_ADC_OVS_SHIFT_RIGHT_8 },
+	};
 
-	switch (config->adc_oversampling) {
-	case 2U:
-		ratio = LL_ADC_OVS_RATIO_2;
-		shift = LL_ADC_OVS_SHIFT_RIGHT_1;
-		break;
-	case 4U:
-		ratio = LL_ADC_OVS_RATIO_4;
-		shift = LL_ADC_OVS_SHIFT_RIGHT_2;
-		break;
-	case 8U:
-		ratio = LL_ADC_OVS_RATIO_8;
-		shift = LL_ADC_OVS_SHIFT_RIGHT_3;
-		break;
-	case 16U:
-		ratio = LL_ADC_OVS_RATIO_16;
-		shift = LL_ADC_OVS_SHIFT_RIGHT_4;
-		break;
-	case 32U:
-		ratio = LL_ADC_OVS_RATIO_32;
-		shift = LL_ADC_OVS_SHIFT_RIGHT_5;
-		break;
-	case 64U:
-		ratio = LL_ADC_OVS_RATIO_64;
-		shift = LL_ADC_OVS_SHIFT_RIGHT_6;
-		break;
-	case 128U:
-		ratio = LL_ADC_OVS_RATIO_128;
-		shift = LL_ADC_OVS_SHIFT_RIGHT_7;
-		break;
-	case 256U:
-		ratio = LL_ADC_OVS_RATIO_256;
-		shift = LL_ADC_OVS_SHIFT_RIGHT_8;
-		break;
-	default:
-		return -EINVAL;
+	for (size_t i = 0; i < ARRAY_SIZE(ovs_table); i++) {
+		if (ovs_table[i].oversampling == config->adc_oversampling) {
+			LL_ADC_SetOverSamplingScope(config->adc,
+						    LL_ADC_OVS_GRP_INJECTED);
+			LL_ADC_ConfigOverSamplingRatioShift(
+				config->adc, ovs_table[i].ratio,
+				ovs_table[i].shift);
+			LOG_DBG("ADC oversampling configured: %u", config->adc_oversampling);
+			return 0;
+		}
 	}
 
-	LL_ADC_SetOverSamplingScope(config->adc, LL_ADC_OVS_GRP_INJECTED);
-	LL_ADC_ConfigOverSamplingRatioShift(config->adc, ratio, shift);
-
-	return 0;
-#else
-	LOG_ERR("ADC injected oversampling is only supported on STM32G4");
-	return -ENOTSUP;
-#endif
+	LOG_ERR("Unsupported ADC oversampling: %u", config->adc_oversampling);
+	return -EINVAL;
 }
 
 /**
@@ -240,6 +215,7 @@ static int adc_configure(const struct device *dev)
 	}
 	ret = adc_configure_oversampling(dev);
 	if (ret < 0) {
+		LOG_ERR("Could not configure ADC oversampling (%d)", ret);
 		return ret;
 	}
 
@@ -290,7 +266,7 @@ static int adc_configure(const struct device *dev)
 
 	IRQ_DIRECT_CONNECT(DT_IRQ_BY_IDX(DT_INST_PARENT(0), 0, irq),
 			   DT_IRQ_BY_IDX(DT_INST_PARENT(0), 0, priority),
-			   adc_irq, IRQ_ZERO_LATENCY);
+			   adc_irq, 0);
 	irq_enable(config->adc_irq);
 
 	return 0;
@@ -378,28 +354,21 @@ static void currsmp_shunt_stm32_configure(const struct device *dev,
 	data->regulation_ctx = ctx;
 }
 
-static void adc_compute_currents(const struct device *dev,
-				 struct currsmp_curr *curr)
+static void adc_convert(const struct device *dev,
+			const struct currsmp_sample *sample,
+			struct currsmp_volt *volt)
 {
 	const struct currsmp_shunt_stm32_config *config = dev->config;
 	struct currsmp_shunt_stm32_data *data = dev->data;
 
 	/* ADC counts -> volts (measured ADC reference / full scale) */
-	const float volts_per_count =	data->adc_vref_v / (float)(2U << (config->adc_resolution - 1U));
+	const float volts_per_count = data->adc_vref_v / (float)(2U << (config->adc_resolution - 1U));
 
-	/* CSA output volts -> phase amps (gain in V/A) */
-	const float amps_per_volt = 1.0f / config->csa_gain_v_per_a;
-
-	uint16_t val_ch1;
-	uint16_t val_ch2;
+	uint16_t val_ch1 = sample->ch1;
+	uint16_t val_ch2 = sample->ch2;
 	int16_t i_a = 0, i_b = 0, i_c = 0;
 
-	val_ch1 = (uint16_t)LL_ADC_INJ_ReadConversionData32(config->adc,
-							    LL_ADC_INJ_RANK_1);
-	val_ch2 = (uint16_t)LL_ADC_INJ_ReadConversionData32(config->adc,
-							    LL_ADC_INJ_RANK_2);
-
-	switch (data->sector) {
+	switch (sample->sector) {
 	case 1U:
 		i_b = data->i_b_offset - val_ch1;
 		i_c = data->i_c_offset - val_ch2;
@@ -435,33 +404,24 @@ static void adc_compute_currents(const struct device *dev,
 		break;
 	}
 
-	curr->i_a = (float)i_a * volts_per_count * amps_per_volt;
-	curr->i_b = (float)i_b * volts_per_count * amps_per_volt;
-	curr->i_c = (float)i_c * volts_per_count * amps_per_volt;
+	volt->v_a = (float)i_a * volts_per_count;
+	volt->v_b = (float)i_b * volts_per_count;
+	volt->v_c = (float)i_c * volts_per_count;
 }
 
-static void adc_update_currents(const struct device *dev)
-{
-	struct currsmp_shunt_stm32_data *data = dev->data;
-	struct currsmp_curr raw;
-
-	adc_compute_currents(dev, &raw);
-
-#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
-	data->curr.i_a = low_pass_filter_process(&data->filter[0], raw.i_a);
-	data->curr.i_b = low_pass_filter_process(&data->filter[1], raw.i_b);
-	data->curr.i_c = low_pass_filter_process(&data->filter[2], raw.i_c);
-#else
-	data->curr = raw;
-#endif
-}
-
-static void currsmp_shunt_stm32_get_currents(const struct device *dev,
-					     struct currsmp_curr *curr)
+static void currsmp_shunt_stm32_get_sample(const struct device *dev,
+					   struct currsmp_sample *sample)
 {
 	const struct currsmp_shunt_stm32_data *data = dev->data;
 
-	*curr = data->curr;
+	*sample = data->sample;
+}
+
+static void currsmp_shunt_stm32_convert(const struct device *dev,
+					const struct currsmp_sample *sample,
+					struct currsmp_volt *volt)
+{
+	adc_convert(dev, sample, volt);
 }
 
 static void currsmp_shunt_stm32_set_sector(const struct device *dev,
@@ -545,7 +505,8 @@ static void currsmp_shunt_stm32_resume(const struct device *dev)
 
 static const struct currsmp_driver_api currsmp_shunt_stm32_driver_api = {
 	.configure = currsmp_shunt_stm32_configure,
-	.get_currents = currsmp_shunt_stm32_get_currents,
+	.get_sample = currsmp_shunt_stm32_get_sample,
+	.convert = currsmp_shunt_stm32_convert,
 	.set_sector = currsmp_shunt_stm32_set_sector,
 	.get_smp_time = currsmp_shunt_stm32_get_smp_time,
 	.start = currsmp_shunt_stm32_start,
@@ -575,12 +536,14 @@ static int currsmp_shunt_stm32_init(const struct device *dev)
 	/* configure ADC */
 	ret = adc_configure(dev);
 	if (ret < 0) {
+		LOG_ERR("Could not configure ADC (%d)", ret);
 		return ret;
 	}
 
 	/* measure ADC reference voltage */
 	ret = adc_measure_vdda(dev);
 	if (ret < 0) {
+		LOG_ERR("Could not measure ADC reference voltage (%d)", ret);
 		return ret;
 	}
 
@@ -591,18 +554,6 @@ static int currsmp_shunt_stm32_init(const struct device *dev)
 				      config->adc_ch_c);
 	data->jsqr[2] = adc_calc_jsqr(config->adc_trigger, config->adc_ch_b,
 				      config->adc_ch_a);
-
-#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
-	for (size_t i = 0; i < ARRAY_SIZE(data->filter); i++) {
-		ret = low_pass_filter_init(&data->filter[i],
-					   CONFIG_SPINNER_SVPWM_STM32_PWM_FREQ,
-					   &config->filter_config);
-		if (ret < 0) {
-			LOG_ERR("Could not initialize current filter (%d)", ret);
-			return ret;
-		}
-	}
-#endif
 
 	return 0;
 }
@@ -623,14 +574,7 @@ static const struct currsmp_shunt_stm32_config currsmp_shunt_stm32_config = {
 	.adc_ch_c = __LL_ADC_DECIMAL_NB_TO_CHANNEL(
 		DT_INST_PROP_BY_IDX(0, adc_channels, 2)),
 	.adc_trigger = DT_INST_PROP(0, adc_trigger),
-	.csa_gain_v_per_a = DT_INST_PROP(0, csa_gain_mv_per_a) / 1000.0f,
 	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
-#if defined(CONFIG_SPINNER_CURRSMP_FILTER_LOW_PASS)
-	.filter_config = {
-		.cutoff_hz = DT_INST_PROP_OR(0, filter_cutoff_hz, 0),
-		.taps = DT_INST_PROP_OR(0, filter_taps, 0),
-	},
-#endif
 };
 
 static struct currsmp_shunt_stm32_data currsmp_shunt_stm32_data;

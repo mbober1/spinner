@@ -6,8 +6,3 @@ properties:
     type: int
     default: 10
     description: Low-pass filter cutoff frequency in Hz.
-
-  filter-taps:
-    type: int
-    default: 15
-    description: Low-pass FIR tap count; must be odd when FIR is selected.

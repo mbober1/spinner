@@ -1,0 +1,24 @@
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Generic current sense adapter.
+
+  Consumes raw samples from a current sampling device, converts them to
+  phase currents and filters them.
+
+compatible: "spinner,current-sense"
+
+include: [base.yaml, filter.yaml]
+
+properties:
+  adc:
+    type: phandle
+    required: true
+    description: Current sampling device providing raw samples.
+
+  csa-gain-mv-per-a:
+    type: int
+    required: true
+    description: |
+      Current sense amplifier gain in mV/A.

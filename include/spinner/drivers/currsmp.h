@@ -22,6 +22,20 @@
 /** @brief Current sampling regulation callback. */
 typedef void (*currsmp_regulation_cb_t)(void *ctx);
 
+/**
+ * @brief Raw current sampling result.
+ *
+ * Counts of the two injected channels and the SV-PWM sector they belong to.
+ */
+struct currsmp_sample {
+	/** Injected rank 1 ADC counts. */
+	uint16_t ch1;
+	/** Injected rank 2 ADC counts. */
+	uint16_t ch2;
+	/** SV-PWM sector of the sample. */
+	uint8_t sector;
+};
+
 /** @brief Current sampling currents. */
 struct currsmp_curr {
 	/** Phase a current. */
@@ -32,13 +46,26 @@ struct currsmp_curr {
 	float i_c;
 };
 
+/** @brief Phase voltages sensed at the current sense amplifier outputs. */
+struct currsmp_volt {
+	/** Phase a voltage (V). */
+	float v_a;
+	/** Phase b voltage (V). */
+	float v_b;
+	/** Phase c voltage (V). */
+	float v_c;
+};
+
 /** @cond INTERNAL_HIDDEN */
 
 struct currsmp_driver_api {
 	void (*configure)(const struct device *dev,
 			  currsmp_regulation_cb_t regulation_cb, void *ctx);
-	void (*get_currents)(const struct device *dev,
-			     struct currsmp_curr *curr);
+	void (*get_sample)(const struct device *dev,
+			   struct currsmp_sample *sample);
+	void (*convert)(const struct device *dev,
+			const struct currsmp_sample *sample,
+			struct currsmp_volt *volt);
 	void (*set_sector)(const struct device *dev, uint8_t sector);
 	uint32_t (*get_smp_time)(const struct device *dev);
 	void (*start)(const struct device *dev);
@@ -68,17 +95,35 @@ static inline void currsmp_configure(const struct device *dev,
 }
 
 /**
- * @brief Get phase currents.
+ * @brief Get the latest raw sample.
+ *
+ * @note Intended for the regulation callback (ISR context) or while paused.
  *
  * @param[in] dev Current sampling device.
- * @param[out] curr Pointer where phase currents will be stored.
+ * @param[out] sample Pointer where the raw sample will be stored.
  */
-static inline void currsmp_get_currents(const struct device *dev,
-					struct currsmp_curr *curr)
+static inline void currsmp_get_sample(const struct device *dev,
+				      struct currsmp_sample *sample)
 {
 	const struct currsmp_driver_api *api = dev->api;
 
-	api->get_currents(dev, curr);
+	api->get_sample(dev, sample);
+}
+
+/**
+ * @brief Convert a raw sample to phase voltages at the CSA outputs.
+ *
+ * @param[in] dev Current sampling device.
+ * @param[in] sample Raw sample.
+ * @param[out] volt Pointer where phase voltages (V) will be stored.
+ */
+static inline void currsmp_convert(const struct device *dev,
+				   const struct currsmp_sample *sample,
+				   struct currsmp_volt *volt)
+{
+	const struct currsmp_driver_api *api = dev->api;
+
+	api->convert(dev, sample, volt);
 }
 
 /**

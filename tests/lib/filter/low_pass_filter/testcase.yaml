@@ -8,10 +8,3 @@ tests:
       - CONFIG_SPINNER_FILTER_LOW_PASS_BIQUAD=y
     integration_platforms:
       - native_sim
-  lib.low_pass_filter.fir:
-    tags: lib filter fir
-    extra_configs:
-      - CONFIG_SPINNER_FILTER_LOW_PASS_FIR=y
-      - CONFIG_SPINNER_FILTER_LOW_PASS_MAX_TAPS=31
-    integration_platforms:
-      - native_sim

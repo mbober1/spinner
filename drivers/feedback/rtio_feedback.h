@@ -61,12 +61,8 @@ int rtio_feedback_init(const struct device *dev);
 		.stack = rtio_feedback_stack_##inst,                                  \
 		.stack_size = K_THREAD_STACK_SIZEOF(rtio_feedback_stack_##inst),     \
 	IF_ENABLED(CONFIG_SPINNER_FILTER_LOW_PASS_BIQUAD,                        \
-		(.speed_filter_config.cutoff_hz = DT_INST_PROP(inst, filter_cutoff_hz), \
-		 .speed_filter_config.taps = DT_INST_PROP(inst, filter_taps),))      \
-	IF_ENABLED(CONFIG_SPINNER_FILTER_LOW_PASS_FIR,                            \
-		(.speed_filter_config.cutoff_hz = DT_INST_PROP(inst, filter_cutoff_hz), \
-		 .speed_filter_config.taps = DT_INST_PROP(inst, filter_taps),))      \
-	};                                                                       \
+		(.speed_filter_config.cutoff_hz = DT_INST_PROP(inst, filter_cutoff_hz),))      \
+	};                                                   											\
 	static struct rtio_feedback_data rtio_feedback_data_##inst;              \
 	DEVICE_DT_INST_DEFINE(inst, rtio_feedback_init, NULL,                     \
 			      &rtio_feedback_data_##inst, &rtio_feedback_config_##inst, \

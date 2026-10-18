@@ -18,23 +18,6 @@ config SPINNER_FILTER_LOW_PASS_BIQUAD
 	select CMSIS_DSP
 	select CMSIS_DSP_FILTERING
 
-config SPINNER_FILTER_LOW_PASS_FIR
-	bool "CMSIS-DSP FIR"
-	depends on FPU
-	select CMSIS_DSP
-	select CMSIS_DSP_FILTERING
-
 endchoice
-
-if SPINNER_FILTER_LOW_PASS_FIR
-
-config SPINNER_FILTER_LOW_PASS_MAX_TAPS
-	int "Maximum low-pass FIR tap count"
-	default 63
-	range 3 63
-	help
-	  Maximum storage reserved in each low-pass FIR filter instance.
-
-endif
 
 endif
